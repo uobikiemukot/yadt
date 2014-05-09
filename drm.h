@@ -1,7 +1,15 @@
 /* See LICENSE for licence details. */
+/* for Linux */
 #include <linux/vt.h>
 #include <linux/kd.h>
+/* for FreeBSD */
+//#include <machine/param.h>
+//#include <sys/consio.h>
+//#include <sys/fbio.h>
+//#include <sys/kbio.h>
+//#include <sys/types.h>
 
+#include <drm.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 

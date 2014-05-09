@@ -1,6 +1,8 @@
 SHELL = /bin/bash
 CC = gcc
 CFLAGS += -std=c99 -pedantic -Wall -I/usr/include/libdrm -ldrm
+# for FreeBSD
+#CFLAGS += -std=c99 -pedantic -Wall -I/usr/local/include/ -I/usr/local/include/drm/ -L/usr/local/lib/ -ldrm
 LDFLAGS +=
 
 HDR = *.h
@@ -17,7 +19,7 @@ mkfont: tools/mkfont.c tools/font.h tools/bdf.h
 	$(CC) -o $@ $< $(CFLAGS) $(LDFLAGS)
 
 $(DST): $(SRC) $(HDR)
-	./mkfont table/alias fonts/{milkjf_8x16r.bdf,milkjf_8x16.bdf,milkjf_k16.bdf} > glyph.h
+	./mkfont table/alias fonts/milkjf_8x16r.bdf fonts/milkjf_8x16.bdf fonts/milkjf_k16.bdf > glyph.h
 	$(CC) -o $@ $< $(CFLAGS) $(LDFLAGS)
 
 install:
