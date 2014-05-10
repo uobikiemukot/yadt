@@ -1,17 +1,11 @@
 /* See LICENSE for licence details. */
-/* for Linux */
 #include <linux/vt.h>
 #include <linux/kd.h>
-/* for FreeBSD */
-//#include <machine/param.h>
-//#include <sys/consio.h>
-//#include <sys/fbio.h>
-//#include <sys/kbio.h>
-//#include <sys/types.h>
 
-#include <drm.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
+
+static const char *dri_path = "/dev/dri/card0";
 
 enum {
 	DEPTH = 24,
@@ -33,15 +27,14 @@ struct drm_dev_t {
 };
 
 struct framebuffer {
-	char *copy;                        /* copy of framebuffer */
-	int fd;                            /* file descriptor of framebuffer */
-	int width, height;                 /* framebuffer resolution */
-	long screen_size;                  /* screen data size (byte) */
-	int line_length;                   /* line length (byte) */
-	int bpp;                           /* BYTES per pixel */
-
-	/* for drm */
-	struct drm_dev_t *dev_head;
+	char *copy;                       /* copy of framebuffer */
+	char *wall;                       /* buffer for wallpaper */
+	int fd;                           /* file descriptor of framebuffer */
+	int width, height;                /* framebuffer resolution */
+	long screen_size;                 /* screen data size (byte) */
+	int line_length;                  /* line length (byte) */
+	int bpp;                          /* BYTES per pixel */
+	struct drm_dev_t *drm_head, *drm; /* for drm */
 };
 
 #include "util.h"
@@ -82,7 +75,7 @@ struct drm_dev_t *drm_find_dev(int fd)
 		conn = drmModeGetConnector(fd, res->connectors[i]);
 
 		if (conn != NULL && conn->connection == DRM_MODE_CONNECTED && conn->count_modes > 0) {
-			dev = (struct drm_dev_t *) malloc(sizeof(struct drm_dev_t));
+			dev = (struct drm_dev_t *) emalloc(sizeof(struct drm_dev_t));
 			memset(dev, 0, sizeof(struct drm_dev_t));
 
 			/* set required info */
@@ -156,7 +149,7 @@ void fb_die(struct framebuffer *fb)
 	struct drm_dev_t *devp, *devp_tmp;
 	struct drm_mode_destroy_dumb dreq;
 
-	for (devp = fb->dev_head; devp != NULL;) {
+	for (devp = fb->drm_head; devp != NULL;) {
 		if (devp->saved_crtc) /* restore ctrtc setting */
 			drmModeSetCrtc(fb->fd, devp->saved_crtc->crtc_id, devp->saved_crtc->buffer_id,
 				devp->saved_crtc->x, devp->saved_crtc->y, &devp->conn_id, 1, &devp->saved_crtc->mode);
@@ -187,14 +180,14 @@ void fb_init(struct framebuffer *fb, uint32_t *color_palette)
 
 	/* init */
 	fb->fd = drm_open(dri_path);
-	if ((fb->dev_head = drm_find_dev(fb->fd)) == NULL)
+	if ((fb->drm_head = drm_find_dev(fb->fd)) == NULL)
 		fatal("available drm_dev not found\n");
 
 	/* FIXME: use first drm_dev */
-	dev = fb->dev_head;
+	dev = fb->drm_head;
 	fb->width = dev->width;
 	fb->height = dev->height;
-	fb->bpp = BPP / 8;
+	fb->bpp = BPP / BITS_PER_BYTE;
 
 	/* init color palette */
 	for (i = 0; i < COLORS; i++)
@@ -202,9 +195,13 @@ void fb_init(struct framebuffer *fb, uint32_t *color_palette)
 
 	/* set up framebuffer */
 	drm_setup_fb(fb->fd, dev);
+
 	fb->line_length = dev->pitch;
 	fb->screen_size = dev->size;
-	fb->copy = (char *) malloc(fb->screen_size);
+
+	fb->wall = NULL;
+	fb->copy = (char *) emalloc(fb->screen_size);
+	fb->drm = fb->drm_head;
 }
 
 void draw_line(struct framebuffer *fb, struct terminal *term, int line)
@@ -249,6 +246,8 @@ void draw_line(struct framebuffer *fb, struct terminal *term, int line)
 				/* set color palette */
 				if (gp->bitmap[glyph_height_offset] & (0x01 << bit_shift))
 					pixel = term->color_palette[color.fg];
+				else if (fb->wall && color.bg == DEFAULT_BG) /* wallpaper */
+					memcpy(&pixel, fb->wall + pos, fb->bpp);
 				else
 					pixel = term->color_palette[color.bg];
 
@@ -260,8 +259,8 @@ void draw_line(struct framebuffer *fb, struct terminal *term, int line)
 	pos = (line * CELL_HEIGHT) * fb->line_length;
 	size = CELL_HEIGHT * fb->line_length;
 
-	memcpy(fb->dev_head->buf + pos, fb->copy + pos, size);
-	drmModeDirtyFB(fb->fd, fb->dev_head->fb_id, &(drmModeClip)
+	memcpy(fb->drm->buf + pos, fb->copy + pos, size);
+	drmModeDirtyFB(fb->fd, fb->drm->fb_id, &(drmModeClip)
 		{.x1 = 0, .y1 = line * CELL_HEIGHT, .x2 = fb->width - 1, .y2 = line * (CELL_HEIGHT + 1) - 1}, 1);
 
 	term->line_dirty[line] = ((term->mode & MODE_CURSOR) && term->cursor.y == line) ? true: false;
@@ -277,5 +276,11 @@ void refresh(struct framebuffer *fb, struct terminal *term)
 	for (line = 0; line < term->lines; line++) {
 		if (term->line_dirty[line])
 			draw_line(fb, term, line);
+	}
+
+	if (tty.redraw_flag) {
+		drmModeSetCrtc(fb->fd, fb->drm->crtc_id, fb->drm->fb_id,
+			0, 0, &fb->drm->conn_id, 1, &fb->drm->mode);
+		drmModeDirtyFB(fb->fd, fb->drm->fb_id, NULL, 0);
 	}
 }

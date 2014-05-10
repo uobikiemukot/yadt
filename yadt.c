@@ -143,9 +143,6 @@ int main()
 			redraw(&term);
 			refresh(&fb, &term);
 			tty.redraw_flag = false;
-			drmModeSetCrtc(fb.fd, fb.dev_head->crtc_id,
-				fb.dev_head->fb_id, 0, 0, &fb.dev_head->conn_id, 1, &fb.dev_head->mode);
-			drmModeDirtyFB(fb.fd, fb.dev_head->fb_id, NULL, 0);
 		}
 
 		check_fds(&fds, &tv, STDIN_FILENO, term.fd);
