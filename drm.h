@@ -5,8 +5,6 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
-static const char *dri_path = "/dev/dri/card0";
-
 enum {
 	DEPTH = 24,
 	BPP = 32,
